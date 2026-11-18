@@ -1,22 +1,19 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { FilterPanel, FilterState } from '@/components/library/FilterPanel';
 import { ResourceCard } from '@/components/library/ResourceCard';
 import { SearchBar } from '@/components/library/SearchBar';
 import { Button } from '@/components/ui/Button';
-import { INITIAL_RESOURCES } from '@/lib/data/mock-db';
-import { DEPARTMENTS, COURSES } from '@/lib/constants';
 import { Resource, ResourceType } from '@/types';
-import { Filter, SlidersHorizontal, ChevronLeft, ChevronRight, X, BookOpen, Layers } from 'lucide-react';
+import { Filter, SlidersHorizontal, ChevronLeft, ChevronRight, X, BookOpen, Layers, RefreshCw } from 'lucide-react';
 
 function LibraryContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  // Search query from URL
   const queryParam = searchParams.get('q') || '';
   const deptParam = searchParams.get('dept') || '';
   const courseParam = searchParams.get('course') || '';
@@ -33,8 +30,11 @@ function LibraryContent() {
   const [sortOption, setSortOption] = useState<'newest' | 'oldest' | 'title' | 'popular'>('newest');
   const [currentPage, setCurrentPage] = useState(1);
   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Sync state if URL changes
+  // Sync state if URL query params change
   useEffect(() => {
     setSearchQuery(queryParam);
     setFilters((prev) => ({
@@ -46,57 +46,53 @@ function LibraryContent() {
     setCurrentPage(1);
   }, [queryParam, deptParam, courseParam, typeParam]);
 
-  // Filter and sort items
-  const filteredResources = useMemo(() => {
-    let list = [...INITIAL_RESOURCES];
+  // Fetch live from /api/search
+  useEffect(() => {
+    let isCancelled = false;
+    const fetchResources = async () => {
+      setIsLoading(true);
+      try {
+        const params = new URLSearchParams();
+        if (searchQuery.trim()) params.set('q', searchQuery.trim());
+        if (filters.department) params.set('department', filters.department);
+        if (filters.course) params.set('course', filters.course);
+        if (filters.type && filters.type !== 'all') params.set('type', filters.type);
+        if (filters.semester) params.set('semester', filters.semester);
+        params.set('sort', sortOption);
+        params.set('page', String(currentPage));
+        params.set('limit', '12');
 
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      list = list.filter(
-        (r) =>
-          r.title.toLowerCase().includes(q) ||
-          r.course?.code.toLowerCase().includes(q) ||
-          r.course?.title.toLowerCase().includes(q)
-      );
-    }
+        const res = await fetch(`/api/search?${params.toString()}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (!isCancelled) {
+            setResources(data.resources || []);
+            setTotalCount(data.total || 0);
+          }
+        } else {
+          if (!isCancelled) {
+            setResources([]);
+            setTotalCount(0);
+          }
+        }
+      } catch {
+        if (!isCancelled) {
+          setResources([]);
+          setTotalCount(0);
+        }
+      } finally {
+        if (!isCancelled) setIsLoading(false);
+      }
+    };
 
-    if (filters.department) {
-      list = list.filter((r) => r.course?.department?.slug === filters.department);
-    }
+    fetchResources();
+    return () => {
+      isCancelled = true;
+    };
+  }, [searchQuery, filters, sortOption, currentPage]);
 
-    if (filters.course) {
-      list = list.filter((r) => r.course?.code.toLowerCase() === filters.course.toLowerCase());
-    }
-
-    if (filters.type && filters.type !== 'all') {
-      list = list.filter((r) => r.type === filters.type);
-    }
-
-    if (filters.semester) {
-      list = list.filter((r) => r.course?.semester === filters.semester);
-    }
-
-    // Sort
-    if (sortOption === 'oldest') {
-      list.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    } else if (sortOption === 'title') {
-      list.sort((a, b) => a.title.localeCompare(b.title));
-    } else if (sortOption === 'popular') {
-      list.sort((a, b) => (b.download_count || 0) - (a.download_count || 0));
-    } else {
-      list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    }
-
-    return list;
-  }, [searchQuery, filters, sortOption]);
-
-  // Pagination: 12 cards per page (Blueprint 4.5)
   const pageSize = 12;
-  const totalPages = Math.ceil(filteredResources.length / pageSize) || 1;
-  const paginatedResources = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filteredResources.slice(start, start + pageSize);
-  }, [filteredResources, currentPage, pageSize]);
+  const totalPages = Math.ceil(totalCount / pageSize) || 1;
 
   const handleResetFilters = () => {
     setFilters({
@@ -146,7 +142,7 @@ function LibraryContent() {
             Resource Library
           </h1>
           <span className="font-mono text-sm text-muted">
-            ({filteredResources.length} {filteredResources.length === 1 ? 'file' : 'files'} found)
+            ({totalCount} {totalCount === 1 ? 'file' : 'files'} found)
           </span>
         </div>
 
@@ -191,9 +187,8 @@ function LibraryContent() {
 
         {/* Results column */}
         <div className="flex-1 min-w-0">
-          {/* Toolbar above results: sort dropdown right, active filter chips left, 16 px gap (Blueprint 4.5) */}
+          {/* Toolbar above results */}
           <div className="flex flex-wrap items-center justify-between gap-4 pb-5 border-b border-border/60 mb-6">
-            {/* Active filter chips left */}
             <div className="flex flex-wrap items-center gap-2">
               {searchQuery && (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 border border-primary/30 px-3 py-1 text-xs text-primary-soft">
@@ -227,15 +222,7 @@ function LibraryContent() {
                   </button>
                 </span>
               )}
-              {filters.semester && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 border border-border px-3 py-1 text-xs text-text">
-                  <span>{filters.semester}</span>
-                  <button onClick={() => removeFilterChip('semester')} className="hover:text-primary-soft">
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              )}
-              {(searchQuery || filters.department || filters.course || filters.type !== 'all' || filters.semester) && (
+              {(searchQuery || filters.department || filters.course || filters.type !== 'all') && (
                 <button
                   onClick={handleResetFilters}
                   className="text-xs text-muted hover:text-danger ml-2 transition"
@@ -245,7 +232,6 @@ function LibraryContent() {
               )}
             </div>
 
-            {/* Sort dropdown right */}
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted">Sort by:</span>
               <select
@@ -261,10 +247,14 @@ function LibraryContent() {
             </div>
           </div>
 
-          {/* Results grid: 3 cards wide on xl, 2 on lg, 1 on mobile (Blueprint 4.5) */}
-          {paginatedResources.length > 0 ? (
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center p-16 text-center text-muted">
+              <RefreshCw className="h-8 w-8 animate-spin text-primary-soft mb-3" />
+              <p className="text-sm">Fetching repository resources...</p>
+            </div>
+          ) : resources.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {paginatedResources.map((res) => (
+              {resources.map((res) => (
                 <ResourceCard key={res.id} resource={res} />
               ))}
             </div>
@@ -272,24 +262,25 @@ function LibraryContent() {
             <div className="rounded-xl border border-border bg-surface p-16 text-center">
               <BookOpen className="mx-auto h-12 w-12 text-muted/60 mb-3" />
               <h3 className="font-heading text-lg font-semibold text-text">
-                No matching academic files found
+                No academic files uploaded yet
               </h3>
               <p className="mt-1 text-sm text-muted max-w-md mx-auto">
-                Try loosening your filters or search for another course code like CSE 213, EEE 101, or ACT 201.
+                No one has uploaded materials yet. Verified university admins can upload lecture notes, past exams, and slides through the Admin Portal.
               </p>
-              <Button onClick={handleResetFilters} variant="secondary" className="mt-5">
-                Reset all filters
-              </Button>
+              {(searchQuery || filters.department || filters.course || filters.type !== 'all') && (
+                <Button onClick={handleResetFilters} variant="secondary" className="mt-5">
+                  Reset filters
+                </Button>
+              )}
             </div>
           )}
 
-          {/* Pagination below, 12 cards per page, 48 px top margin (Blueprint 4.5) */}
-          {totalPages > 1 && (
+          {/* Pagination */}
+          {!isLoading && totalPages > 1 && (
             <div className="mt-12 flex items-center justify-between border-t border-border pt-6">
               <span className="text-xs text-muted font-mono">
                 Showing {(currentPage - 1) * pageSize + 1} -{' '}
-                {Math.min(currentPage * pageSize, filteredResources.length)} of{' '}
-                {filteredResources.length} files
+                {Math.min(currentPage * pageSize, totalCount)} of {totalCount} files
               </span>
 
               <div className="flex items-center gap-2">
@@ -303,22 +294,6 @@ function LibraryContent() {
                   <ChevronLeft className="h-4 w-4" />
                   <span>Previous</span>
                 </Button>
-
-                <div className="flex items-center gap-1">
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                    <button
-                      key={page}
-                      onClick={() => setCurrentPage(page)}
-                      className={`h-9 w-9 rounded-md text-xs font-mono transition ${
-                        currentPage === page
-                          ? 'bg-primary text-white font-bold'
-                          : 'text-muted hover:bg-surface-2 hover:text-text'
-                      }`}
-                    >
-                      {page}
-                    </button>
-                  ))}
-                </div>
 
                 <Button
                   size="sm"

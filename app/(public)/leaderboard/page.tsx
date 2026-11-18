@@ -1,9 +1,32 @@
-import React from 'react';
+'use client';
+
+import React, { useState, useEffect } from 'react';
 import { RankTable } from '@/components/leaderboard/RankTable';
-import { INITIAL_LEADERBOARD } from '@/lib/data/mock-db';
-import { Trophy, ShieldCheck, Sparkles } from 'lucide-react';
+import { LeaderboardEntry } from '@/types';
+import { Trophy, RefreshCw } from 'lucide-react';
 
 export default function LeaderboardPage() {
+  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchLeaderboard = async () => {
+      try {
+        const res = await fetch('/api/leaderboard');
+        if (res.ok) {
+          const data = await res.json();
+          setEntries(data.leaderboard || []);
+        }
+      } catch {
+        setEntries([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchLeaderboard();
+  }, []);
+
   return (
     <div className="mx-auto max-w-container px-6 py-8">
       {/* Header */}
@@ -20,8 +43,14 @@ export default function LeaderboardPage() {
         </p>
       </div>
 
-      {/* Main Rank Table */}
-      <RankTable initialEntries={INITIAL_LEADERBOARD} />
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center p-16 text-muted">
+          <RefreshCw className="h-8 w-8 animate-spin text-primary-soft mb-3" />
+          <p className="text-sm">Fetching verified rankings...</p>
+        </div>
+      ) : (
+        <RankTable initialEntries={entries} />
+      )}
     </div>
   );
 }

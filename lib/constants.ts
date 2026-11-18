@@ -13,28 +13,28 @@ export const DEPARTMENTS: Department[] = [
     institution_id: INSTITUTION.id,
     name: 'Computer Science and Engineering',
     slug: 'cse',
-    file_count: 48,
+    file_count: 0,
   },
   {
     id: '22222222-2222-2222-2222-222222222202',
     institution_id: INSTITUTION.id,
     name: 'Electrical and Electronic Engineering',
     slug: 'eee',
-    file_count: 24,
+    file_count: 0,
   },
   {
     id: '22222222-2222-2222-2222-222222222203',
     institution_id: INSTITUTION.id,
     name: 'School of Business and Entrepreneurship',
     slug: 'bba',
-    file_count: 22,
+    file_count: 0,
   },
   {
     id: '22222222-2222-2222-2222-222222222204',
     institution_id: INSTITUTION.id,
     name: 'Physical and Mathematical Sciences',
     slug: 'mps',
-    file_count: 18,
+    file_count: 0,
   },
 ];
 

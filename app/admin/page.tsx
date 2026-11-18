@@ -1,8 +1,10 @@
-import React from 'react';
+'use client';
+
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
-import { INITIAL_RESOURCES, INITIAL_CGPA_SUBMISSIONS, INITIAL_REPORTS } from '@/lib/data/mock-db';
 import { COURSES } from '@/lib/constants';
+import { createClient } from '@/lib/supabase/client';
 import {
   FileText,
   UploadCloud,
@@ -10,14 +12,38 @@ import {
   AlertTriangle,
   ShieldCheck,
   ArrowRight,
-  Database,
-  Lock,
+  RefreshCw,
 } from 'lucide-react';
 
 export default function AdminDashboardPage() {
-  const publishedCount = INITIAL_RESOURCES.filter((r) => r.status === 'published').length;
-  const pendingCgpa = INITIAL_CGPA_SUBMISSIONS.filter((s) => s.status === 'pending').length;
-  const pendingReports = INITIAL_REPORTS.filter((r) => r.status === 'pending').length;
+  const [publishedCount, setPublishedCount] = useState(0);
+  const [pendingCgpa, setPendingCgpa] = useState(0);
+  const [pendingReports, setPendingReports] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const supabase = createClient();
+
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      try {
+        const [resQuery, cgpaQuery, repQuery] = await Promise.all([
+          supabase.from('resources').select('id', { count: 'exact', head: true }),
+          supabase.from('cgpa_submissions').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+          supabase.from('reports').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+        ]);
+
+        setPublishedCount(resQuery.count || 0);
+        setPendingCgpa(cgpaQuery.count || 0);
+        setPendingReports(repQuery.count || 0);
+      } catch {
+        // Fallback
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchMetrics();
+  }, [supabase]);
 
   return (
     <div className="flex flex-col gap-8">
@@ -26,7 +52,7 @@ export default function AdminDashboardPage() {
         <div>
           <h2 className="font-heading text-xl font-bold text-text">Dashboard Overview</h2>
           <p className="text-xs text-muted mt-0.5">
-            Real-time status of academic repository, pending student submissions and takedowns.
+            Real-time status of academic repository, student grade verifications and copyright takedowns.
           </p>
         </div>
 
@@ -45,7 +71,9 @@ export default function AdminDashboardPage() {
             <span className="text-xs font-semibold uppercase">Total Files</span>
             <FileText className="h-4 w-4 text-primary-soft" />
           </div>
-          <div className="font-heading text-2xl font-bold text-text">{publishedCount}</div>
+          <div className="font-heading text-2xl font-bold text-text">
+            {isLoading ? '...' : publishedCount}
+          </div>
           <span className="text-[11px] text-muted">Across {COURSES.length} courses</span>
         </div>
 
@@ -54,9 +82,11 @@ export default function AdminDashboardPage() {
             <span className="text-xs font-semibold uppercase">CGPA Reviews</span>
             <CheckCircle2 className="h-4 w-4 text-warning" />
           </div>
-          <div className="font-heading text-2xl font-bold text-warning">{pendingCgpa} Pending</div>
+          <div className="font-heading text-2xl font-bold text-warning">
+            {isLoading ? '...' : `${pendingCgpa} Pending`}
+          </div>
           <Link href="/admin/verifications" className="text-[11px] text-primary-soft hover:underline block mt-0.5">
-            Review screenshots →
+            Review submissions →
           </Link>
         </div>
 
@@ -65,7 +95,9 @@ export default function AdminDashboardPage() {
             <span className="text-xs font-semibold uppercase">Copyright Reports</span>
             <AlertTriangle className="h-4 w-4 text-danger" />
           </div>
-          <div className="font-heading text-2xl font-bold text-danger">{pendingReports} Pending</div>
+          <div className="font-heading text-2xl font-bold text-danger">
+            {isLoading ? '...' : `${pendingReports} Pending`}
+          </div>
           <Link href="/admin/reports" className="text-[11px] text-primary-soft hover:underline block mt-0.5">
             Take action →
           </Link>
@@ -81,14 +113,14 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
-      {/* Security Check Status Banner (Blueprint Section 5) */}
+      {/* Security Check Status Banner */}
       <div className="rounded-lg border border-success/30 bg-success/5 p-5">
         <div className="flex items-start gap-3">
           <ShieldCheck className="h-5 w-5 text-success shrink-0 mt-0.5" />
           <div className="flex-1">
             <h3 className="text-sm font-semibold text-text">Launch Security Enforced</h3>
             <p className="text-xs text-muted mt-1 leading-relaxed">
-              Row Level Security is enabled on every Postgres table. File uploads validate <code className="font-mono text-primary-soft">%PDF-</code> magic byte signatures and enforce a 25 MB limit with randomized UUID storage paths. Only authenticated users with verified <code className="font-mono text-primary-soft">@iub.edu.bd</code> domain accounts can access signed 15-minute download links.
+              Row Level Security is active on every Postgres table. File uploads validate <code className="font-mono text-primary-soft">%PDF-</code> magic byte signatures and enforce a 25 MB limit with randomized UUID storage paths. Only authenticated users with verified <code className="font-mono text-primary-soft">@iub.edu.bd</code> domain accounts can access signed 15-minute download links.
             </p>
           </div>
         </div>
@@ -108,7 +140,7 @@ export default function AdminDashboardPage() {
               <h4 className="text-sm font-semibold text-text group-hover:text-primary-soft">
                 Manage Published Resources
               </h4>
-              <p className="text-xs text-muted">View, edit, or remove files from the public index</p>
+              <p className="text-xs text-muted">View, edit, or remove files from the public repository</p>
             </div>
           </div>
           <ArrowRight className="h-4 w-4 text-muted group-hover:text-primary-soft" />

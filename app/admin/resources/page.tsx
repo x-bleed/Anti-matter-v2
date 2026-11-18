@@ -1,25 +1,57 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { INITIAL_RESOURCES } from '@/lib/data/mock-db';
 import { Resource } from '@/types';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { formatDate } from '@/lib/utils';
 import { useToast } from '@/components/ui/Toast';
-import { Trash2, Edit, ExternalLink, Search, Filter, Plus, FileText } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
+import { Trash2, ExternalLink, Search, Plus, BookOpen, RefreshCw } from 'lucide-react';
 
 export default function AdminResourcesPage() {
   const { success, error } = useToast();
-  const [resources, setResources] = useState<Resource[]>(INITIAL_RESOURCES);
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [filterType, setFilterType] = useState<string>('all');
   const [searchFilter, setSearchFilter] = useState('');
 
-  const handleDelete = (id: string, title: string) => {
+  const supabase = createClient();
+
+  useEffect(() => {
+    const fetchAdminResources = async () => {
+      setIsLoading(true);
+      try {
+        const { data, error: fetchErr } = await supabase
+          .from('resources')
+          .select('*, course:courses(*, department:departments(*))')
+          .order('created_at', { ascending: false });
+
+        if (!fetchErr && data) {
+          setResources(data as Resource[]);
+        } else {
+          setResources([]);
+        }
+      } catch {
+        setResources([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchAdminResources();
+  }, [supabase]);
+
+  const handleDelete = async (id: string, title: string) => {
     if (confirm(`Are you sure you want to delete "${title}"?`)) {
-      setResources((prev) => prev.filter((r) => r.id !== id));
-      success('Resource Removed', `Deleted ${title}`);
+      try {
+        await supabase.from('resources').delete().eq('id', id);
+        setResources((prev) => prev.filter((r) => r.id !== id));
+        success('Resource Removed', `Deleted ${title}`);
+      } catch {
+        error('Failed to delete resource');
+      }
     }
   };
 
@@ -38,7 +70,7 @@ export default function AdminResourcesPage() {
         <div>
           <h2 className="font-heading text-xl font-bold text-text">Manage Repository Resources</h2>
           <p className="text-xs text-muted mt-0.5">
-            {resources.length} active files across all university courses.
+            {resources.length} active files in the live database.
           </p>
         </div>
 
@@ -79,7 +111,7 @@ export default function AdminResourcesPage() {
         </div>
       </div>
 
-      {/* Resources table: 56 px rows with status badge and edit and delete icon buttons (Blueprint 4.5) */}
+      {/* Resources table (Blueprint 4.5: 56 px rows with status badge and edit and delete buttons) */}
       <div className="rounded-lg border border-border overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -94,62 +126,76 @@ export default function AdminResourcesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60 text-xs">
-              {filtered.slice(0, 25).map((res) => (
-                // 56 px rows (Blueprint 4.5)
-                <tr
-                  key={res.id}
-                  className="h-14 hover:bg-surface-2/40 transition-colors"
-                >
-                  <td className="py-2.5 px-4 max-w-[280px]">
-                    <p className="font-semibold text-text truncate">{res.title}</p>
-                    <span className="font-mono text-[11px] text-primary-soft">
-                      {res.course?.code}
-                    </span>
-                  </td>
-
-                  <td className="py-2.5 px-4 whitespace-nowrap">
-                    <Badge variant={res.type} className="h-6 text-[10px] px-2">
-                      {res.type.replace('_', ' ')}
-                    </Badge>
-                  </td>
-
-                  <td className="py-2.5 px-4 whitespace-nowrap font-mono text-muted">
-                    {res.file_size} • {res.page_count}p
-                  </td>
-
-                  <td className="py-2.5 px-4 whitespace-nowrap">
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-semibold text-success">
-                      <span className="h-1.5 w-1.5 rounded-full bg-success" />
-                      {res.status}
-                    </span>
-                  </td>
-
-                  <td className="py-2.5 px-4 whitespace-nowrap text-muted">
-                    {formatDate(res.created_at)}
-                  </td>
-
-                  {/* Edit and delete icon buttons (36 px hit area minimum 40 px on touch) (Blueprint 4.5) */}
-                  <td className="py-2.5 px-4 text-right whitespace-nowrap">
-                    <div className="flex items-center justify-end gap-1">
-                      <Link
-                        href={`/resource/${res.id}`}
-                        className="flex h-9 w-9 sm:h-9 sm:w-9 min-h-[36px] min-w-[36px] items-center justify-center rounded-md text-muted hover:text-text hover:bg-surface-2 transition"
-                        title="View PDF"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </Link>
-
-                      <button
-                        onClick={() => handleDelete(res.id, res.title)}
-                        className="flex h-9 w-9 sm:h-9 sm:w-9 min-h-[36px] min-w-[36px] items-center justify-center rounded-md text-muted hover:text-danger hover:bg-danger/10 transition"
-                        title="Delete Resource"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={6} className="py-12 text-center text-muted">
+                    <RefreshCw className="h-6 w-6 animate-spin mx-auto text-primary-soft mb-2" />
+                    <span>Loading resources...</span>
                   </td>
                 </tr>
-              ))}
+              ) : filtered.length > 0 ? (
+                filtered.map((res) => (
+                  <tr key={res.id} className="h-14 hover:bg-surface-2/40 transition-colors">
+                    <td className="py-2.5 px-4 max-w-[280px]">
+                      <p className="font-semibold text-text truncate">{res.title}</p>
+                      <span className="font-mono text-[11px] text-primary-soft">
+                        {res.course?.code}
+                      </span>
+                    </td>
+
+                    <td className="py-2.5 px-4 whitespace-nowrap">
+                      <Badge variant={res.type} className="h-6 text-[10px] px-2">
+                        {res.type.replace('_', ' ')}
+                      </Badge>
+                    </td>
+
+                    <td className="py-2.5 px-4 whitespace-nowrap font-mono text-muted">
+                      {res.file_size || '2.4 MB'} • {res.page_count || 10}p
+                    </td>
+
+                    <td className="py-2.5 px-4 whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-semibold text-success">
+                        <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                        {res.status}
+                      </span>
+                    </td>
+
+                    <td className="py-2.5 px-4 whitespace-nowrap text-muted">
+                      {formatDate(res.created_at)}
+                    </td>
+
+                    <td className="py-2.5 px-4 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1">
+                        <Link
+                          href={`/resource/${res.id}`}
+                          className="flex h-9 w-9 items-center justify-center rounded-md text-muted hover:text-text hover:bg-surface-2 transition"
+                          title="View PDF"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Link>
+
+                        <button
+                          onClick={() => handleDelete(res.id, res.title)}
+                          className="flex h-9 w-9 items-center justify-center rounded-md text-muted hover:text-danger hover:bg-danger/10 transition"
+                          title="Delete Resource"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={6} className="py-12 text-center text-muted">
+                    <BookOpen className="h-8 w-8 mx-auto text-muted/50 mb-2" />
+                    <p className="font-medium text-text">No resources uploaded yet.</p>
+                    <p className="text-[11px] text-muted mt-1">
+                      Click &ldquo;Upload New&rdquo; above to publish the first course document.
+                    </p>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

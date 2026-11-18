@@ -6,57 +6,97 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useToast } from '@/components/ui/Toast';
-import { ShieldCheck, Mail, ArrowRight, AlertCircle, Sparkles } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
+import { ShieldCheck, Mail, AlertCircle, ArrowRight, CheckCircle2 } from 'lucide-react';
 
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirect = searchParams.get('redirect') || '/';
+  const urlError = searchParams.get('error');
   const reason = searchParams.get('reason');
   const { success, error } = useToast();
 
   const [email, setEmail] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [domainError, setDomainError] = useState<string | null>(null);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isEmailLoading, setIsEmailLoading] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [formError, setFormError] = useState<string | null>(urlError || null);
 
-  const handleGoogleSignIn = async (chosenEmail?: string, chosenRole?: 'student' | 'admin') => {
-    setIsLoading(true);
-    setDomainError(null);
+  const supabase = createClient();
 
-    const targetEmail = chosenEmail || (email.trim() ? email.trim() : 'student@iub.edu.bd');
+  // 1. Google SSO with @iub.edu.bd restriction
+  const handleGoogleSignIn = async () => {
+    setIsGoogleLoading(true);
+    setFormError(null);
 
-    // University email domain check (Blueprint Item 4: enforce iub.edu.bd domain)
-    const domain = targetEmail.split('@')[1]?.toLowerCase();
-    if (domain !== 'iub.edu.bd') {
-      const errMsg = 'Email domain not allowed. Only @iub.edu.bd student emails are permitted.';
-      setDomainError(errMsg);
-      error(errMsg);
-      setIsLoading(false);
+    try {
+      const origin = window.location.origin;
+      const { error: authError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(redirect)}`,
+          queryParams: {
+            hd: 'iub.edu.bd', // prompts Google login to only allow @iub.edu.bd accounts
+            access_type: 'offline',
+            prompt: 'select_account',
+          },
+        },
+      });
+
+      if (authError) {
+        setFormError(authError.message);
+        error(authError.message);
+      }
+    } catch (err: any) {
+      setFormError(err?.message || 'Failed to initiate Google sign in');
+      error('Failed to connect to authentication server');
+    } finally {
+      setIsGoogleLoading(false);
+    }
+  };
+
+  // 2. University Email Magic Link / OTP Login
+  const handleEmailSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) {
+      setFormError('Please enter your university email address.');
       return;
     }
 
+    const domain = cleanEmail.split('@')[1];
+    if (domain !== 'iub.edu.bd') {
+      const errMsg = 'Email domain not allowed. Only @iub.edu.bd student and faculty emails are permitted.';
+      setFormError(errMsg);
+      error(errMsg);
+      return;
+    }
+
+    setIsEmailLoading(true);
     try {
-      const res = await fetch('/api/auth/demo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: targetEmail,
-          role: chosenRole || (targetEmail.includes('admin') || targetEmail.includes('fahad') ? 'admin' : 'student'),
-        }),
+      const origin = window.location.origin;
+      const { error: otpError } = await supabase.auth.signInWithOtp({
+        email: cleanEmail,
+        options: {
+          emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(redirect)}`,
+        },
       });
 
-      if (res.ok) {
-        success('Signed in successfully', `Welcome to ANTI-MATTER (${targetEmail})`);
-        router.push(redirect);
-        router.refresh();
+      if (otpError) {
+        setFormError(otpError.message);
+        error(otpError.message);
       } else {
-        const data = await res.json();
-        error(data.error || 'Authentication failed');
+        setOtpSent(true);
+        success('Verification link sent!', `Check your inbox at ${cleanEmail}`);
       }
-    } catch {
-      error('Failed to connect to authentication service');
+    } catch (err: any) {
+      setFormError(err?.message || 'Failed to send login link');
+      error('Failed to send verification link');
     } finally {
-      setIsLoading(false);
+      setIsEmailLoading(false);
     }
   };
 
@@ -73,89 +113,103 @@ function LoginContent() {
           Sign In to ANTI-MATTER
         </h1>
         <p className="mt-1.5 text-xs text-muted">
-          Access course notes, PDF previews, and verified CGPA leaderboard
+          Independent University, Bangladesh Academic Portal
         </p>
 
         {reason === 'admin_required' && (
           <div className="mt-4 w-full rounded-md border border-warning/30 bg-warning/10 p-2.5 text-xs text-warning text-left flex items-center gap-2">
             <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>Admin privileges required to access that dashboard.</span>
+            <span>Admin account required to access that dashboard.</span>
           </div>
         )}
 
-        {domainError && (
+        {formError && (
           <div className="mt-4 w-full rounded-md border border-danger/30 bg-danger/10 p-2.5 text-xs text-danger text-left flex items-center gap-2">
             <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>{domainError}</span>
+            <span>{formError}</span>
           </div>
         )}
 
-        {/* Google SSO Button: Large, full width (Blueprint 4.5) */}
-        <div className="mt-6 w-full flex flex-col gap-3">
-          <Button
-            size="lg"
-            variant="secondary"
-            onClick={() => handleGoogleSignIn('student@iub.edu.bd', 'student')}
-            isLoading={isLoading}
-            className="w-full gap-3 border-border hover:border-primary-soft/60"
-          >
-            {/* Google G Icon */}
-            <svg className="h-5 w-5" viewBox="0 0 24 24">
-              <path
-                fill="#4285F4"
-                d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"
-              />
-              <path
-                fill="#34A853"
-                d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24z"
-              />
-              <path
-                fill="#FBBC05"
-                d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.98 0 12s.45 3.82 1.25 5.42l4.03-3.15z"
-              />
-              <path
-                fill="#EA4335"
-                d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
-              />
-            </svg>
-            <span className="text-sm font-semibold">Continue with Google</span>
-          </Button>
-
-          {/* Muted note about the university email requirement (Blueprint 4.5 & Item 4) */}
-          <p className="text-[11px] text-muted leading-relaxed px-2">
-            Restricted to students and faculty with an active <span className="font-mono text-primary-soft">@iub.edu.bd</span> university Google account.
-          </p>
-        </div>
-
-        {/* Demo Fast-Login Selector */}
-        <div className="mt-8 pt-6 border-t border-border w-full text-left">
-          <span className="text-[11px] font-mono uppercase tracking-wider text-muted block mb-3">
-            Quick Test Accounts
-          </span>
-          <div className="flex flex-col gap-2">
+        {otpSent ? (
+          <div className="mt-6 w-full rounded-lg border border-success/30 bg-success/10 p-5 text-center flex flex-col items-center">
+            <CheckCircle2 className="h-10 w-10 text-success mb-2" />
+            <h3 className="font-heading text-sm font-semibold text-text">Check Your University Email</h3>
+            <p className="text-xs text-muted mt-1 leading-relaxed">
+              We sent a secure sign-in link to <span className="font-mono text-primary-soft">{email}</span>. Click the link in your email to instantly log in.
+            </p>
             <button
-              onClick={() => handleGoogleSignIn('tanvir.h@iub.edu.bd', 'student')}
-              className="flex items-center justify-between p-2.5 rounded-md border border-border bg-surface-2 hover:border-primary-soft text-xs text-text transition"
+              onClick={() => setOtpSent(false)}
+              className="mt-4 text-xs text-primary-soft hover:underline font-medium"
             >
-              <div className="flex flex-col">
-                <span className="font-semibold">Student Account</span>
-                <span className="text-muted font-mono text-[10px]">tanvir.h@iub.edu.bd</span>
-              </div>
-              <span className="text-[10px] text-primary-soft font-mono">Select</span>
-            </button>
-
-            <button
-              onClick={() => handleGoogleSignIn('fahad@iub.edu.bd', 'admin')}
-              className="flex items-center justify-between p-2.5 rounded-md border border-border bg-surface-2 hover:border-amber-400 text-xs text-text transition"
-            >
-              <div className="flex flex-col">
-                <span className="font-semibold text-amber-300">Admin Account</span>
-                <span className="text-muted font-mono text-[10px]">fahad@iub.edu.bd</span>
-              </div>
-              <span className="text-[10px] text-amber-400 font-mono">Select</span>
+              Use a different email
             </button>
           </div>
-        </div>
+        ) : (
+          <div className="mt-6 w-full flex flex-col gap-4">
+            {/* Google SSO Button: Large, full width (Blueprint 4.5) */}
+            <Button
+              size="lg"
+              variant="secondary"
+              onClick={handleGoogleSignIn}
+              isLoading={isGoogleLoading}
+              className="w-full gap-3 border-border hover:border-primary-soft/60 shadow-sm"
+            >
+              <svg className="h-5 w-5" viewBox="0 0 24 24">
+                <path
+                  fill="#4285F4"
+                  d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.98 0 12s.45 3.82 1.25 5.42l4.03-3.15z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
+                />
+              </svg>
+              <span className="text-sm font-semibold">Continue with Google</span>
+            </Button>
+
+            <div className="flex items-center gap-3 my-1">
+              <div className="h-px flex-1 bg-border" />
+              <span className="text-[11px] font-mono text-muted uppercase tracking-wider">or sign in with email</span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+
+            {/* University Email Magic Link Form */}
+            <form onSubmit={handleEmailSignIn} className="flex flex-col gap-3 text-left">
+              <Input
+                label="IUB Student Email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="studentID@iub.edu.bd"
+                required
+              />
+
+              <Button
+                type="submit"
+                variant="primary"
+                size="md"
+                isLoading={isEmailLoading}
+                className="w-full gap-2"
+              >
+                <Mail className="h-4 w-4" />
+                <span>Send Magic Sign-In Link</span>
+              </Button>
+            </form>
+
+            {/* Muted note about the university email requirement (Blueprint 4.5 & Item 4) */}
+            <p className="text-[11px] text-muted leading-relaxed px-2 mt-2">
+              Strictly restricted to students and faculty with an active <span className="font-mono text-primary-soft">@iub.edu.bd</span> university Google account.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
