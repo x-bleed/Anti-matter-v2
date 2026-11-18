@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0B0820;
+  --surface: #14102E;
+  --surface-2: #1C1740;
+  --border: #2B2457;
+  --primary: #7C3AED;
+  --primary-hover: #6D28D9;
+  --primary-soft: #A78BFA;
+  --text: #F5F3FF;
+  --text-muted: #A09BC4;
+  --success: #22C55E;
+  --warning: #F59E0B;
+  --danger: #EF4444;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --shadow-card: 0 4px 24px rgba(0,0,0,0.35);
+  --glow: 0 0 0 4px rgba(124,58,237,0.25);
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 24px;
+  min-height: 100vh;
+  overflow-x: hidden;
+  selection-background-color: #7C3AED;
+  selection-color: #FFFFFF;
+}
+
+::selection {
+  background-color: rgba(124, 58, 237, 0.4);
+  color: #FFFFFF;
+}
+
+/* Blueprint focus ring: 2px primary-soft, 2px offset visible on every interactive element */
+:focus-visible {
+  outline: 2px solid var(--primary-soft);
+  outline-offset: 2px;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
