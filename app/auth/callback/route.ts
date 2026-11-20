@@ -15,17 +15,16 @@ export async function GET(request: Request) {
       const domain = email?.split('@')[1]?.toLowerCase();
 
       // Enforce university email domain check (Blueprint 5.1 Item 4)
-      // Allow only @iub.edu.bd emails
-      if (domain !== 'iub.edu.bd') {
+      // Allow only @iub.edu.bd emails — BUT always allow the configured admin email
+      const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'fahad@iub.edu.bd';
+      const isAdminEmail = email?.toLowerCase() === adminEmail.toLowerCase();
+
+      if (domain !== 'iub.edu.bd' && !isAdminEmail) {
         await supabase.auth.signOut();
         return NextResponse.redirect(
           `${origin}/login?error=${encodeURIComponent('Only @iub.edu.bd student emails are allowed.')}`
         );
       }
-
-      // Check if user is configured as admin
-      const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'fahad@iub.edu.bd';
-      const isAdmin = email?.toLowerCase() === adminEmail.toLowerCase();
 
       // Auto-create/sync profile in public.profiles table
       try {
@@ -35,7 +34,7 @@ export async function GET(request: Request) {
             email: email!,
             name: user_metadata?.full_name || user_metadata?.name || email!.split('@')[0],
             avatar_url: user_metadata?.avatar_url || user_metadata?.picture || null,
-            role: isAdmin ? 'admin' : 'student',
+            role: isAdminEmail ? 'admin' : 'student',
           },
           { onConflict: 'id' }
         );
